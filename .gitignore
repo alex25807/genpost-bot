@@ -1,0 +1,11 @@
+.env
+.venv/
+.idea/
+__pycache__/
+*.pyc
+*.xlsx
+*.csv
+genpost_bot.lock
+genpost_bot_runtime.json
+genpost_bot_state.json
+genpost_bot_analytics.json

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Генерация постов VK/TG</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <main class="page">
+        <section class="panel panel-main">
+            <div class="panel-header">
+                <div>
+                    <h1>Генерация и публикация постов</h1>
+                    <p class="subtitle">Один интерфейс для VK и Telegram без отдельного frontend-сервера.</p>
+                </div>
+                <div class="status-banner" id="status-summary">Проверяю доступность сервисов...</div>
+            </div>
+
+            <section class="section-block">
+                <h2>Клиентский режим</h2>
+                <p class="muted-text">Если клиент еще не определился с темой, сервис предложит несколько вариантов на выбор.</p>
+
+                <label for="business-context">Ниша, продукт или аудитория</label>
+                <textarea
+                    id="business-context"
+                    rows="4"
+                    placeholder="Например: студия дизайна интерьеров, частная клиника, онлайн-школа английского, агентство недвижимости"
+                ></textarea>
+
+                <label for="goal">Цель поста</label>
+                <input
+                    id="goal"
+                    type="text"
+                    value="получить идеи для полезных и продающих постов"
+                    placeholder="Например: вовлечь клиентов, прогреть аудиторию, рассказать о новой услуге"
+                />
+
+                <div class="actions">
+                    <button id="suggest-topics-btn" type="button">Предложить темы</button>
+                </div>
+
+                <div class="advisor-box" id="consultant-message">
+                    AI-консультант готов помочь с выбором темы.
+                </div>
+
+                <div class="topic-suggestions" id="topic-suggestions">
+                    <div class="topic-suggestion-empty">Здесь появятся темы, которые клиент сможет выбрать одним кликом.</div>
+                </div>
+            </section>
+
+            <section class="section-block">
+                <h2>Параметры генерации</h2>
+
+                <label for="topic">Тема поста</label>
+                <input id="topic" type="text" placeholder="Например: автоматизация маркетинга" />
+
+                <label for="tone">Тон</label>
+                <input id="tone" type="text" value="экспертный и дружелюбный" />
+
+                <fieldset>
+                    <legend>Площадки публикации</legend>
+                    <label><input type="checkbox" name="platform" value="vk" checked> VK</label>
+                    <label><input type="checkbox" name="platform" value="telegram"> Telegram</label>
+                </fieldset>
+
+                <label class="checkbox">
+                    <input id="include-image" type="checkbox" checked>
+                    Сгенерировать изображение
+                </label>
+
+                <label for="image-preferences">Параметры изображения</label>
+                <textarea
+                    id="image-preferences"
+                    rows="4"
+                    placeholder="Например: фотореалистичная женщина рисует в светлой студии; без текста и логотипов; теплый дневной свет"
+                ></textarea>
+                <div class="actions">
+                    <button id="image-hint-btn" class="secondary-btn" type="button">Показать пример промпта</button>
+                </div>
+
+                <div class="actions">
+                    <button id="generate-btn" type="button">Сгенерировать</button>
+                    <button id="regenerate-image-btn" type="button">Перегенерировать картинку</button>
+                    <button id="publish-btn" type="button" disabled>Опубликовать</button>
+                </div>
+            </section>
+
+            <section class="section-block">
+                <div class="section-title-row">
+                    <h2>Статус доступности сервисов</h2>
+                    <button id="refresh-status-btn" class="secondary-btn" type="button">Обновить статус</button>
+                </div>
+                <div class="service-grid" id="service-statuses">
+                    <article class="service-card service-card-pending">
+                        <h3>OpenAI</h3>
+                        <p>Проверка...</p>
+                    </article>
+                    <article class="service-card service-card-pending">
+                        <h3>VK</h3>
+                        <p>Проверка...</p>
+                    </article>
+                    <article class="service-card service-card-pending">
+                        <h3>Telegram</h3>
+                        <p>Проверка...</p>
+                    </article>
+                </div>
+            </section>
+        </section>
+
+        <section class="panel panel-result">
+            <section class="section-block">
+                <h2>Результат генерации</h2>
+
+                <label for="content">Текст поста</label>
+                <textarea id="content" rows="14" placeholder="Здесь появится текст поста. Его можно редактировать перед публикацией."></textarea>
+
+                <label for="image-prompt">Промпт изображения</label>
+                <textarea id="image-prompt" rows="6" placeholder="Здесь появится промпт изображения"></textarea>
+
+                <label for="image-url">Ссылка на изображение</label>
+                <input id="image-url" type="text" placeholder="Здесь появится ссылка на изображение" />
+
+                <div class="preview-block">
+                    <div class="preview-header">
+                        <h3>Превью изображения</h3>
+                        <span id="preview-hint" class="muted-text">Пока нет изображения</span>
+                    </div>
+                    <div class="preview" id="preview-container">
+                        <img id="image-preview" alt="Превью изображения" hidden>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section-block">
+                <h2>Статусы публикации</h2>
+                <div class="publish-grid" id="publish-results">
+                    <article class="publish-card publish-card-idle">
+                        <h3>VK</h3>
+                        <p>Публикация еще не запускалась.</p>
+                    </article>
+                    <article class="publish-card publish-card-idle">
+                        <h3>Telegram</h3>
+                        <p>Публикация еще не запускалась.</p>
+                    </article>
+                </div>
+            </section>
+
+            <section class="section-block">
+                <h2>Лог действий</h2>
+                <div class="log" id="log">Интерфейс готов. Введите тему и запустите генерацию.</div>
+            </section>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
