@@ -1155,6 +1155,9 @@ class GenPostDialogBot:
 
         if session.include_image:
             self.bot.send_message(chat_id, "Подбираю изображение к посту...")
+            if not session.image_preferences:
+                session.image_preferences = build_image_prompt_hint(session.selected_topic)
+                self._save_sessions()
             session.image_prompt = generator.generate_image_prompt(
                 session.selected_topic,
                 session.tone,
