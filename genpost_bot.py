@@ -822,7 +822,8 @@ class GenPostDialogBot:
             chat_id,
             (
                 "Напиши своими словами, какой должна быть картинка.\n\n"
-                "Опиши кто в кадре, что делает, какой свет, интерьер, настроение, ракурс и важные детали. "
+                "Это не про размер/разрешение — это про описание сцены (промпт): кто в кадре, что делает, "
+                "какой свет, интерьер, настроение, ракурс и важные детали. "
                 "Если не знаешь, с чего начать, нажми кнопку с примером по теме поста."
             ),
             keyboard=self._with_navigation(
@@ -899,14 +900,31 @@ class GenPostDialogBot:
 
         self.bot.answer_callback(callback_id)
 
+        if data == "image:regenerate":
+            try:
+                self.regenerate_image(chat_id)
+            except Exception as exc:
+                self.bot.send_message(chat_id, f"Не удалось перегенерировать картинку: {exc}")
+            return
+        if data == "image:change":
+            session = self.session_for(chat_id)
+            session.stage = "await_image_preferences_text"
+            session.pending_image_action = "regenerate_image"
+            self._save_sessions()
+            self.send_image_preferences_prompt(chat_id)
+            return
+
         if data.startswith("tone:"):
             self.handle_tone_choice(chat_id, data.split(":", 1)[1])
             return
         if data.startswith("topic:"):
             self.handle_topic_choice(chat_id, data.split(":", 1)[1])
             return
-        if data.startswith("image:"):
-            self.handle_image_choice(chat_id, data.split(":", 1)[1])
+        if data == "image:yes":
+            self.handle_image_choice(chat_id, "yes")
+            return
+        if data == "image:no":
+            self.handle_image_choice(chat_id, "no")
             return
         if data.startswith("platform:"):
             self.handle_platform_choice(chat_id, data.split(":", 1)[1])
@@ -936,19 +954,6 @@ class GenPostDialogBot:
                 self.generate_draft(chat_id)
             except Exception as exc:
                 self.bot.send_message(chat_id, f"Не удалось перегенерировать черновик: {exc}")
-            return
-        if data == "image:regenerate":
-            try:
-                self.regenerate_image(chat_id)
-            except Exception as exc:
-                self.bot.send_message(chat_id, f"Не удалось перегенерировать картинку: {exc}")
-            return
-        if data == "image:change":
-            session = self.session_for(chat_id)
-            session.stage = "await_image_preferences_text"
-            session.pending_image_action = "regenerate_image"
-            self._save_sessions()
-            self.send_image_preferences_prompt(chat_id)
             return
         if data == "imageprefs:skip":
             session = self.session_for(chat_id)
@@ -1006,8 +1011,12 @@ class GenPostDialogBot:
                     "1️⃣ Подобрать 5 сильных тем под вашу нишу\n"
                     "2️⃣ Дать выбрать тон поста\n"
                     "3️⃣ Сгенерировать текст и картинку\n"
-                    "4️⃣ Перегенерировать текст/картинку в один клик\n"
+                    "4️⃣ Перегенерировать текст и/или картинку\n"
                     "5️⃣ Опубликовать в Telegram, VK или сразу в обе площадки\n\n"
+                    "🖼️ Как правильно перегенерировать:\n"
+                    "✅ Если нужен новый пост — нажмите «Перегенерировать текст» (это обновит черновик)\n"
+                    "✅ Если устраивает текст, но нужна другая картинка — нажмите «Перегенерировать картинку»\n"
+                    "✅ «Параметры картинки» — это описание сцены (промпт), чтобы управлять тем, что будет в кадре\n\n"
                     "🧭 Если не знаете, что нажимать дальше, жмите «🏠 Главное меню»."
                 ),
                 keyboard=self._main_menu_keyboard(
