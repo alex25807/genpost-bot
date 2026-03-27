@@ -52,6 +52,7 @@ class ChatSession:
     trial_posts_used: int = 0
     published_topics: list[str] = field(default_factory=list)
     recent_topics: list[str] = field(default_factory=list)
+    pending_image_action: str = ""
 
     def reset_draft(self) -> None:
         self.topics = []
@@ -62,6 +63,7 @@ class ChatSession:
         self.image_url = None
         self.image_prompt = None
         self.image_preferences = ""
+        self.pending_image_action = ""
 
     def remember_topic(self, topic: str) -> None:
         cleaned = topic.strip()
@@ -815,6 +817,7 @@ class GenPostDialogBot:
 
     def send_image_preferences_prompt(self, chat_id: int) -> None:
         session = self.session_for(chat_id)
+        hint = build_image_prompt_hint(session.selected_topic)
         self.bot.send_message(
             chat_id,
             (
@@ -826,6 +829,7 @@ class GenPostDialogBot:
                 [
                     [{"text": "💡 Показать пример по теме", "callback_data": "imagehint:show"}],
                     [{"text": "Сгенерировать без своего описания", "callback_data": "imageprefs:skip"}],
+                    [{"text": "✅ Использовать пример", "callback_data": "imagehint:useonly"}],
                 ],
                 back_callback="back:image" if not session.generated_content else "back:imageprefs",
             ),
@@ -850,11 +854,16 @@ class GenPostDialogBot:
 
         if session.stage == "await_image_preferences_text":
             session.image_preferences = text
+            action = session.pending_image_action or ("regenerate_image" if session.generated_content else "generate_draft")
+            session.pending_image_action = ""
             self._save_sessions()
             try:
-                self.generate_draft(chat_id)
+                if action == "regenerate_image" and session.generated_content:
+                    self.regenerate_image(chat_id)
+                else:
+                    self.generate_draft(chat_id)
             except Exception as exc:
-                self.bot.send_message(chat_id, f"Не удалось подготовить черновик: {exc}")
+                self.bot.send_message(chat_id, f"Не удалось подготовить изображение: {exc}")
             return
 
         self.bot.send_message(
@@ -937,6 +946,7 @@ class GenPostDialogBot:
         if data == "image:change":
             session = self.session_for(chat_id)
             session.stage = "await_image_preferences_text"
+            session.pending_image_action = "regenerate_image"
             self._save_sessions()
             self.send_image_preferences_prompt(chat_id)
             return
@@ -946,6 +956,20 @@ class GenPostDialogBot:
             self._save_sessions()
             try:
                 if session.generated_content:
+                    self.regenerate_image(chat_id)
+                else:
+                    self.generate_draft(chat_id)
+            except Exception as exc:
+                self.bot.send_message(chat_id, f"Не удалось подготовить изображение: {exc}")
+            return
+        if data == "imagehint:useonly":
+            session = self.session_for(chat_id)
+            session.image_preferences = build_image_prompt_hint(session.selected_topic)
+            action = "regenerate_image" if session.generated_content else "generate_draft"
+            session.pending_image_action = ""
+            self._save_sessions()
+            try:
+                if action == "regenerate_image" and session.generated_content:
                     self.regenerate_image(chat_id)
                 else:
                     self.generate_draft(chat_id)
