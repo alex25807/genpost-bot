@@ -279,12 +279,15 @@ class GenPostDialogBot:
 
     def _register_commands(self) -> None:
         settings.reload()
+        plan_desc = (
+            "Статус trial-режима" if settings.monetization_enabled else "Статус доступа к боту"
+        )
         commands = [
             {"command": "start", "description": "Начать работу: клиент, тема, пост"},
             {"command": "help", "description": "Что умеет бот и как работать"},
             {"command": "new", "description": "Новая тема для текущего клиента"},
             {"command": "reset", "description": "Полный сброс и новый клиент"},
-            {"command": "plan", "description": "Статус trial-режима"},
+            {"command": "plan", "description": plan_desc},
             {"command": "weekly_report", "description": "Недельный отчет (админ)"},
         ]
         if settings.monetization_enabled:
@@ -358,6 +361,8 @@ class GenPostDialogBot:
         if self._has_active_subscription(chat_id):
             return 999999
         settings.reload()
+        if not settings.monetization_enabled:
+            return 999999
         return max(0, settings.trial_free_posts - int(session.trial_posts_used))
 
     def _send_paywall(self, chat_id: int, session: ChatSession) -> None:
@@ -366,10 +371,8 @@ class GenPostDialogBot:
             self.bot.send_message(
                 chat_id,
                 (
-                    "🔒 Демо-лимит исчерпан.\n\n"
-                    f"✅ Вы использовали {session.trial_posts_used} из {settings.trial_free_posts} бесплатных генераций.\n"
-                    "Сейчас бот работает в MVP-режиме для портфолио.\n"
-                    "Если хотите полный доступ раньше релиза, напишите владельцу бота."
+                    "Сейчас генерация недоступна по техническим причинам.\n"
+                    "Напишите владельцу бота или администратору — помогут восстановить доступ."
                 ),
                 keyboard=self._with_navigation([], include_main_menu=True),
             )
@@ -395,13 +398,11 @@ class GenPostDialogBot:
         session = self.session_for(chat_id)
         settings.reload()
         if not settings.monetization_enabled:
-            remaining = self._remaining_trial_posts(session, chat_id)
             self.bot.send_message(
                 chat_id,
                 (
-                    "🧾 Режим: MVP demo\n"
-                    f"✅ Бесплатных генераций осталось: {remaining} из {settings.trial_free_posts}\n"
-                    "💡 Монетизация временно отключена, бот в режиме портфолио."
+                    "✅ Режим полного доступа.\n"
+                    "Лимиты на количество генераций в этой сборке не действуют."
                 ),
             )
             return
@@ -753,10 +754,15 @@ class GenPostDialogBot:
         return keyboard
 
     def send_main_menu(self, chat_id: int) -> None:
+        settings.reload()
         session = self.sessions.get(chat_id)
         has_client = bool(session and session.business_context)
         trial_block = ""
-        if session and not self._has_active_subscription(chat_id):
+        if (
+            settings.monetization_enabled
+            and session
+            and not self._has_active_subscription(chat_id)
+        ):
             remaining = self._remaining_trial_posts(session, chat_id)
             trial_block = f"\n\n🧾 Trial: осталось бесплатных генераций {remaining}. Команда: /plan"
         text = (
@@ -1166,6 +1172,7 @@ class GenPostDialogBot:
             self.bot.send_message(chat_id, f"Не удалось подготовить черновик: {exc}")
 
     def generate_draft(self, chat_id: int) -> None:
+        settings.reload()
         session = self.session_for(chat_id)
         if not self._has_active_subscription(chat_id):
             remaining = self._remaining_trial_posts(session, chat_id)
@@ -1202,7 +1209,7 @@ class GenPostDialogBot:
             output_tokens += self._estimate_tokens(session.image_prompt)
             image_count = 1
 
-        if not self._has_active_subscription(chat_id):
+        if settings.monetization_enabled and not self._has_active_subscription(chat_id):
             session.trial_posts_used += 1
 
         session.stage = "await_publish_choice"
@@ -1243,7 +1250,7 @@ class GenPostDialogBot:
             preview += f"\n\n🔹 Изображение готово: {session.image_url}"
         if session.image_preferences:
             preview += f"\n🔹 Параметры картинки: {session.image_preferences}"
-        if not self._has_active_subscription(chat_id):
+        if settings.monetization_enabled and not self._has_active_subscription(chat_id):
             remaining = self._remaining_trial_posts(session, chat_id)
             preview += f"\n\n🧾 Осталось бесплатных генераций: {remaining}"
 
