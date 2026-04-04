@@ -44,14 +44,39 @@ python genpost_bot.py
 3. Предлагает несколько тем на выбор.
 4. Генерирует черновик после выбора темы.
 5. Публикует в Telegram, VK или сразу в обе площадки.
-6. Поддерживает trial/подписку, `/plan`, и админ-команду `/invoice` для создания ссылки оплаты YooKassa.
+6. Опционально: trial, подписка, оплата через YooKassa и внешние webhooks (см. ниже).
+
+### Монетизация (`MONETIZATION_ENABLED`)
+
+В `.env` флаг `MONETIZATION_ENABLED` переключает два режима.
+
+**`false` (значение по умолчанию в `.env.example`)** — удобно при передаче проекта заказчику или пока не настроена оплата:
+
+- лимит на число генераций **не применяется**;
+- в интерфейсе бота **нет** счётчиков trial и напоминаний о подписке;
+- команда `/plan` сообщает, что действует полный доступ;
+- админ-команды оплаты (`/grant_sub`, `/invoice`) **не попадают** в меню команд бота;
+- эндпоинты `POST /api/payments/subscription-webhook` и `POST /api/payments/yookassa-webhook` отвечают `503`, пока монетизация выключена.
+
+Переменные вроде `SUBSCRIPTION_PRICE_RUB` и ключи YooKassa можно оставить в `.env` пустыми: они не используются, пока `MONETIZATION_ENABLED=false`.
+
+**`true`** — режим SaaS:
+
+- после исчерпания `TRIAL_FREE_POSTS` показывается пейволл и ссылка из `SUBSCRIPTION_PAYMENT_URL` (если задана);
+- `/plan` показывает trial или активную подписку;
+- для админа (`ADMIN_CHAT_ID`): `/grant_sub`, `/invoice` и скрипт `scripts/create_yookassa_payment.py`;
+- webhooks оплаты работают при корректных секретах и настройках провайдера.
 
 ## Переменные окружения
+Обязательные для работы ядра:
+
 1. `OPENAI_API_KEY`
 2. `VK_API_KEY`
 3. `VK_GROUP_ID`
 4. `TELEGRAM_BOT_TOKEN`
 5. `TELEGRAM_CHAT_ID`
+
+Дополнительно: `MONETIZATION_ENABLED`, `TRIAL_FREE_POSTS`, `SUBSCRIPTION_*`, `YOOKASSA_*`, `PAYMENT_WEBHOOK_SECRET` — см. комментарии в `.env.example`.
 
 ## API
 1. `GET /api/health`
