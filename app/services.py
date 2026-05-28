@@ -1,8 +1,10 @@
+import base64
 import re
 
 from openai import OpenAI
 
 from app.config import settings
+from app.image_storage import save_image_bytes
 
 
 CLIENT_ASSISTANT_SYSTEM_PROMPT = (
@@ -111,7 +113,7 @@ def _extract_image_reference(response) -> str:
 
     b64_data = getattr(item, "b64_json", None)
     if b64_data:
-        return f"data:image/png;base64,{b64_data}"
+        return save_image_bytes(base64.b64decode(b64_data))
 
     raise RuntimeError("OpenAI не вернул ссылку или данные изображения.")
 
