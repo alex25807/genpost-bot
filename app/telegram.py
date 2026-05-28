@@ -1,7 +1,7 @@
 import requests
 
 from app.config import settings
-from app.image_storage import LOCAL_IMAGE_PREFIX, load_image_bytes
+from app.image_storage import load_image_bytes, should_upload_image_as_file
 from app.publishers.base import BasePublisher
 
 
@@ -22,6 +22,11 @@ def _format_telegram_error(message: str) -> str:
         return "Telegram отклонил запрос: проверьте TELEGRAM_BOT_TOKEN."
     if "wrong file identifier" in lowered_message or "failed to get http url content" in lowered_message:
         return "Telegram не смог получить изображение по указанной ссылке."
+    if "unsupported url protocol" in lowered_message:
+        return (
+            "Telegram не принимает служебную ссылку local:// — обновите app/publishers/telegram.py "
+            "на сервере и перезапустите бота."
+        )
     if "caption is too long" in lowered_message:
         return "Подпись к изображению слишком длинная для Telegram."
     if "message is too long" in lowered_message:
@@ -149,12 +154,15 @@ class TelegramPublisher(BasePublisher):
                 "chat_id": self.chat_id,
                 "caption": caption,
             }
-            photo_files = None
-            if image_url.strip().startswith(("data:", LOCAL_IMAGE_PREFIX)):
-                photo_files = {"photo": ("image.png", load_image_bytes(image_url))}
+            if should_upload_image_as_file(image_url):
+                photo_message = self._call_api(
+                    "sendPhoto",
+                    photo_payload,
+                    files={"photo": ("image.png", load_image_bytes(image_url))},
+                )
             else:
-                photo_payload["photo"] = image_url
-            photo_message = self._call_api("sendPhoto", photo_payload, files=photo_files)
+                photo_payload["photo"] = image_url.strip()
+                photo_message = self._call_api("sendPhoto", photo_payload)
             follow_up_messages = self._send_text_chunks(remainder)
             return {
                 "photo_message": photo_message,
