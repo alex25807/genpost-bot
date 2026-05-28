@@ -11,6 +11,7 @@ import uuid
 import requests
 
 from app.config import settings
+from app.image_storage import load_image_bytes, should_upload_image_as_file
 from app.publishers.telegram import TelegramPublisher
 from app.publishers.vk import VKPublisher
 from app.services import ContentGeneratorService, build_image_prompt_hint
@@ -88,8 +89,18 @@ class TelegramBotClient:
             raise ValueError("Для режима бота нужен TELEGRAM_BOT_TOKEN в .env.")
         self.base_url = f"https://api.telegram.org/bot{settings.telegram_bot_token}"
 
-    def _request(self, method: str, data: dict | None = None) -> dict:
-        response = requests.post(f"{self.base_url}/{method}", data=data or {}, timeout=60)
+    def _request(
+        self,
+        method: str,
+        data: dict | None = None,
+        files: dict | None = None,
+    ) -> dict:
+        response = requests.post(
+            f"{self.base_url}/{method}",
+            data=data or {},
+            files=files,
+            timeout=60,
+        )
         payload = response.json()
         if not payload.get("ok"):
             raise RuntimeError(payload.get("description", "Telegram bot API error"))
@@ -105,6 +116,27 @@ class TelegramBotClient:
         if not payload.get("ok"):
             raise RuntimeError(payload.get("description", "Telegram getUpdates error"))
         return payload["result"]
+
+    def send_photo(
+        self,
+        chat_id: int,
+        image_ref: str,
+        caption: str = "",
+        keyboard: list[list[dict]] | None = None,
+    ) -> dict:
+        data: dict[str, str] = {"chat_id": str(chat_id)}
+        if caption:
+            data["caption"] = caption[:1024]
+        if keyboard:
+            data["reply_markup"] = json.dumps({"inline_keyboard": keyboard}, ensure_ascii=False)
+        if should_upload_image_as_file(image_ref):
+            return self._request(
+                "sendPhoto",
+                data,
+                files={"photo": ("image.png", load_image_bytes(image_ref))},
+            )
+        data["photo"] = image_ref.strip()
+        return self._request("sendPhoto", data)
 
     def send_message(self, chat_id: int, text: str, keyboard: list[list[dict]] | None = None) -> dict:
         data = {
@@ -1009,6 +1041,32 @@ class GenPostDialogBot:
         if data == "context:new":
             self.start_fresh_dialog(chat_id, from_menu=True)
 
+    def _telegram_publish_chat_id(self, user_chat_id: int) -> str:
+        configured = settings.telegram_chat_id.strip()
+        return configured or str(user_chat_id)
+
+    def _telegram_publish_target_label(self, user_chat_id: int) -> str:
+        configured = settings.telegram_chat_id.strip()
+        if configured and configured != str(user_chat_id):
+            return f"канал/чат из TELEGRAM_CHAT_ID ({configured})"
+        return "этот диалог с ботом"
+
+    def _send_image_preview(self, chat_id: int, image_ref: str) -> None:
+        try:
+            self.bot.send_photo(
+                chat_id,
+                image_ref,
+                caption="🖼 Превью сгенерированного изображения",
+            )
+        except Exception as exc:
+            self.bot.send_message(
+                chat_id,
+                (
+                    "Не удалось показать превью картинки в чате. "
+                    f"При публикации попробуем отправить файл снова. Причина: {exc}"
+                ),
+            )
+
     def handle_menu(self, chat_id: int, action: str) -> None:
         if action == "main":
             self.send_main_menu(chat_id)
@@ -1251,12 +1309,18 @@ class GenPostDialogBot:
         keyboard = self._with_navigation(keyboard, back_callback="back:image")
 
         if session.image_url:
-            preview += "\n\n🖼 Изображение готово — можно публиковать или перегенерировать картинку."
+            preview += (
+                "\n\n🖼 Изображение готово — превью отправлено выше. "
+                f"При публикации в Telegram пост уйдёт в: {self._telegram_publish_target_label(chat_id)}."
+            )
         if session.image_preferences:
             preview += f"\n🔹 Параметры картинки: {session.image_preferences}"
         if settings.monetization_enabled and not self._has_active_subscription(chat_id):
             remaining = self._remaining_trial_posts(session, chat_id)
             preview += f"\n\n🧾 Осталось бесплатных генераций: {remaining}"
+
+        if session.image_url:
+            self._send_image_preview(chat_id, session.image_url)
 
         self.bot.send_message(
             chat_id,
@@ -1286,6 +1350,7 @@ class GenPostDialogBot:
         )
         session.image_url = generator.generate_image(session.image_prompt)
         self._save_sessions()
+        self._send_image_preview(chat_id, session.image_url)
         self._record_usage(
             chat_id=chat_id,
             action="regenerate_image",
@@ -1310,8 +1375,9 @@ class GenPostDialogBot:
         self.bot.send_message(
             chat_id,
             (
-                "Картинка обновлена.\n\n"
-                f"🔹 Параметры: {session.image_preferences or 'базовый фотореалистичный сценарий'}"
+                "Картинка обновлена (превью выше).\n\n"
+                f"🔹 Параметры: {session.image_preferences or 'базовый фотореалистичный сценарий'}\n"
+                f"🔹 Публикация в Telegram: {self._telegram_publish_target_label(chat_id)}"
             ),
             keyboard=keyboard,
         )
@@ -1328,11 +1394,14 @@ class GenPostDialogBot:
 
         if "telegram" in target_platforms:
             try:
-                TelegramPublisher(chat_id=str(chat_id)).publish(
+                tg_target = self._telegram_publish_chat_id(chat_id)
+                TelegramPublisher(chat_id=tg_target).publish(
                     session.generated_content,
                     session.image_url,
                 )
-                results.append("Telegram: успешно")
+                results.append(
+                    f"Telegram: успешно → {self._telegram_publish_target_label(chat_id)}"
+                )
                 successful_platforms.append("telegram")
             except Exception as exc:
                 results.append(f"Telegram: ошибка - {exc}")
