@@ -40,6 +40,15 @@ def save_image_from_data_uri(data_uri: str) -> str:
     return save_image_bytes(base64.b64decode(encoded))
 
 
+def is_remote_image_url(image_ref: str) -> bool:
+    lowered = (image_ref or "").strip().lower()
+    return lowered.startswith("http://") or lowered.startswith("https://")
+
+
+def should_upload_image_as_file(image_ref: str) -> bool:
+    return bool((image_ref or "").strip()) and not is_remote_image_url(image_ref)
+
+
 def resolve_local_image_path(image_ref: str) -> Path | None:
     ref = (image_ref or "").strip()
     if ref.startswith(LOCAL_IMAGE_PREFIX):
