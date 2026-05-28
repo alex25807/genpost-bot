@@ -63,6 +63,59 @@ def _is_invalid_image_model_error(exc: Exception) -> bool:
     ) and "model" in lowered_message
 
 
+_GPT_IMAGE_QUALITY = frozenset({"low", "medium", "high", "auto"})
+_DALLE_IMAGE_QUALITY = frozenset({"standard", "hd"})
+
+
+def _resolve_image_quality(model_name: str) -> str | None:
+    model_lower = model_name.lower()
+    configured = (settings.openai_image_quality or "").strip().lower()
+    legacy_map = {"standard": "medium", "hd": "high"}
+
+    if "dall-e" in model_lower:
+        if configured in _DALLE_IMAGE_QUALITY:
+            return configured
+        if configured in legacy_map:
+            return "standard" if legacy_map[configured] == "medium" else "hd"
+        return configured or "standard"
+
+    if configured in legacy_map:
+        configured = legacy_map[configured]
+    if configured in _GPT_IMAGE_QUALITY:
+        return configured
+    return "medium"
+
+
+def _image_generation_kwargs(model_name: str, prompt: str) -> dict:
+    kwargs: dict = {
+        "model": model_name,
+        "prompt": prompt,
+        "size": settings.default_image_size,
+        "n": 1,
+    }
+    quality = _resolve_image_quality(model_name)
+    if quality:
+        kwargs["quality"] = quality
+    if "dall-e" in model_name.lower():
+        kwargs["response_format"] = "url"
+    return kwargs
+
+
+def _extract_image_reference(response) -> str:
+    if not response.data:
+        raise RuntimeError("OpenAI не вернул данные изображения.")
+
+    item = response.data[0]
+    if getattr(item, "url", None):
+        return item.url
+
+    b64_data = getattr(item, "b64_json", None)
+    if b64_data:
+        return f"data:image/png;base64,{b64_data}"
+
+    raise RuntimeError("OpenAI не вернул ссылку или данные изображения.")
+
+
 def _normalize_generated_post(content: str) -> str:
     text = (content or "").replace("\r\n", "\n").strip()
     replacements = [
@@ -239,29 +292,20 @@ class ContentGeneratorService:
         except Exception as exc:
             raise RuntimeError(_format_openai_error(exc, "подготовить промпт изображения")) from exc
 
+    def _request_image(self, model_name: str, prompt: str):
+        return self.client.images.generate(**_image_generation_kwargs(model_name, prompt))
+
     def generate_image(self, prompt: str) -> str:
         model_name = settings.openai_image_model
         try:
-            response = self.client.images.generate(
-                model=model_name,
-                prompt=prompt,
-                size=settings.default_image_size,
-                quality="standard",
-                n=1,
-            )
-            return response.data[0].url
+            response = self._request_image(model_name, prompt)
+            return _extract_image_reference(response)
         except Exception as exc:
             # Backward compatibility for stale env values like "dall-e-3".
             if model_name != "gpt-image-1" and _is_invalid_image_model_error(exc):
                 try:
-                    response = self.client.images.generate(
-                        model="gpt-image-1",
-                        prompt=prompt,
-                        size=settings.default_image_size,
-                        quality="standard",
-                        n=1,
-                    )
-                    return response.data[0].url
+                    response = self._request_image("gpt-image-1", prompt)
+                    return _extract_image_reference(response)
                 except Exception as fallback_exc:
                     raise RuntimeError(
                         _format_openai_error(fallback_exc, "сгенерировать изображение")
