@@ -54,6 +54,15 @@ def _format_openai_error(exc: Exception, action: str) -> str:
     return f"OpenAI не смог {action}."
 
 
+def _is_invalid_image_model_error(exc: Exception) -> bool:
+    lowered_message = str(exc).lower()
+    return (
+        "does not exist" in lowered_message
+        or "invalid_value" in lowered_message
+        or "unknown model" in lowered_message
+    ) and "model" in lowered_message
+
+
 def _normalize_generated_post(content: str) -> str:
     text = (content or "").replace("\r\n", "\n").strip()
     replacements = [
@@ -231,9 +240,10 @@ class ContentGeneratorService:
             raise RuntimeError(_format_openai_error(exc, "подготовить промпт изображения")) from exc
 
     def generate_image(self, prompt: str) -> str:
+        model_name = settings.openai_image_model
         try:
             response = self.client.images.generate(
-                model=settings.openai_image_model,
+                model=model_name,
                 prompt=prompt,
                 size=settings.default_image_size,
                 quality="standard",
@@ -241,4 +251,19 @@ class ContentGeneratorService:
             )
             return response.data[0].url
         except Exception as exc:
+            # Backward compatibility for stale env values like "dall-e-3".
+            if model_name != "gpt-image-1" and _is_invalid_image_model_error(exc):
+                try:
+                    response = self.client.images.generate(
+                        model="gpt-image-1",
+                        prompt=prompt,
+                        size=settings.default_image_size,
+                        quality="standard",
+                        n=1,
+                    )
+                    return response.data[0].url
+                except Exception as fallback_exc:
+                    raise RuntimeError(
+                        _format_openai_error(fallback_exc, "сгенерировать изображение")
+                    ) from fallback_exc
             raise RuntimeError(_format_openai_error(exc, "сгенерировать изображение")) from exc
