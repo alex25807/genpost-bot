@@ -1,7 +1,7 @@
 import requests
 
 from app.config import settings
-from app.publishers.base import BasePublisher
+from app.publishers.base import BasePublisher, load_image_bytes
 
 
 TELEGRAM_MESSAGE_LIMIT = 4096
@@ -88,13 +88,20 @@ class TelegramPublisher(BasePublisher):
         except Exception:
             return False
 
-    def _call_api(self, method: str, payload: dict[str, str | None], timeout: int = 30) -> dict:
+    def _call_api(
+        self,
+        method: str,
+        payload: dict[str, str | None],
+        timeout: int = 30,
+        files: dict | None = None,
+    ) -> dict:
         data = {key: value for key, value in payload.items() if value is not None}
 
         try:
             response = requests.post(
                 f"{self.base_url}/{method}",
                 data=data,
+                files=files,
                 timeout=timeout,
             )
         except requests.Timeout as exc:
@@ -137,14 +144,16 @@ class TelegramPublisher(BasePublisher):
 
         if image_url:
             caption, remainder = _take_chunk(normalized_content, TELEGRAM_CAPTION_LIMIT)
-            photo_message = self._call_api(
-                "sendPhoto",
-                {
-                    "chat_id": self.chat_id,
-                    "photo": image_url,
-                    "caption": caption,
-                },
-            )
+            photo_payload = {
+                "chat_id": self.chat_id,
+                "caption": caption,
+            }
+            photo_files = None
+            if image_url.strip().startswith("data:"):
+                photo_files = {"photo": ("image.png", load_image_bytes(image_url))}
+            else:
+                photo_payload["photo"] = image_url
+            photo_message = self._call_api("sendPhoto", photo_payload, files=photo_files)
             follow_up_messages = self._send_text_chunks(remainder)
             return {
                 "photo_message": photo_message,

@@ -1,7 +1,7 @@
 import requests
 
 from app.config import settings
-from app.publishers.base import BasePublisher
+from app.publishers.base import BasePublisher, load_image_bytes
 
 
 def _format_vk_error(exc: Exception) -> str:
@@ -72,8 +72,8 @@ class VKPublisher(BasePublisher):
         upload_server = self._vk_get("photos.getWallUploadServer", {"group_id": self.group_id})
 
         try:
-            image_data = requests.get(image_url, timeout=60).content
-        except requests.RequestException as exc:
+            image_data = load_image_bytes(image_url)
+        except RuntimeError as exc:
             raise RuntimeError("Не удалось загрузить изображение для публикации в VK.") from exc
 
         try:
